@@ -4,6 +4,144 @@
 
 Add your design for a B-S pricer & implied vol calculator using MudBlazor components here
 
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+
+    <MudPaper Elevation="6" Class="pa-6">
+
+        <MudText Typo="Typo.h4" GutterBottom="true">
+            Black–Scholes Pricer & Implied Volatility Calculator
+        </MudText>
+
+        <!-- ================= INPUT PARAMETERS ================= -->
+        <MudText Typo="Typo.h6" Class="mt-4">Market Parameters</MudText>
+
+        <MudGrid Class="mt-2">
+
+            <MudItem xs="12" sm="6">
+                <MudSelect T="OptionType"
+                           Label="Option Type"
+                           @bind-Value="optionType">
+                    <MudSelectItem Value="OptionType.Call">Call</MudSelectItem>
+                    <MudSelectItem Value="OptionType.Put">Put</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="underlyingPrice"
+                                 Label="Underlying Price (S)"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="strike"
+                                 Label="Strike (K)"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="interestRate"
+                                 Label="Interest Rate (r)"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="volatility"
+                                 Label="Volatility (σ)"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="timeToMaturity"
+                                 Label="Time to Maturity (T)"
+                                 Immediate="true" />
+            </MudItem>
+
+        </MudGrid>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Class="mt-4"
+                   OnClick="CalculatePrice">
+            Calculate Price
+        </MudButton>
+
+        <!-- ================= PRICE RESULT ================= -->
+        @if (price.HasValue)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4">
+                Black–Scholes Price: <b>@price.Value.ToString("F6")</b>
+            </MudAlert>
+        }
+
+        <!-- ================= IMPLIED VOL SECTION ================= -->
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.h6">Implied Volatility</MudText>
+
+        <MudGrid Class="mt-2">
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="marketPrice"
+                                 Label="Market Option Price"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="tolerance"
+                                 Label="Tolerance"
+                                 Immediate="true" />
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="maxIterations"
+                                 Label="Max Iterations"
+                                 Immediate="true" />
+            </MudItem>
+
+        </MudGrid>
+
+        <MudStack Row="true" Spacing="2" Class="mt-4">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       OnClick="ComputeImpliedVol">
+                Compute B-S Implied Vol
+            </MudButton>
+
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Info"
+                       OnClick="ComputeBachelierImpliedVol">
+                Compute Bachelier ATM Vol
+            </MudButton>
+        </MudStack>
+
+        <!-- ================= IMPLIED VOL RESULTS ================= -->
+        @if (impliedVol.HasValue)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4">
+                Black–Scholes Implied Vol:
+                <b>@impliedVol.Value.ToString("F6")</b>
+            </MudAlert>
+        }
+
+        @if (bachelierImpliedVol.HasValue)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-2">
+                Bachelier ATM Implied Vol:
+                <b>@bachelierImpliedVol.Value.ToString("F6")</b>
+            </MudAlert>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4">
+                @errorMessage
+            </MudAlert>
+        }
+
+    </MudPaper>
+
+</MudContainer>
+
 @code {
 
     private OptionType optionType = OptionType.Call;
