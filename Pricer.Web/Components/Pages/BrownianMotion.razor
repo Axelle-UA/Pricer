@@ -1,0 +1,202 @@
+﻿@page "/brownian-motion"
+@using MudBlazor
+@using MudBlazor.Charts
+
+<MudText Typo="Typo.h4" Class="mb-2">Brownian Motion Simulator</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Explore how a scaled random walk converges to Brownian motion as the number of steps increases,
+    and how volatility scaling affects the nature of the stochastic process.
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudChart ChartType="ChartType.Timeseries"
+              ChartSeries="@_series"
+              Width="100%"
+              Height="350px"
+              ChartOptions="_options" />
+</MudPaper>
+
+<MudGrid>
+
+    <!-- Slider 1: Number of Steps -->
+    <MudItem xs="12">
+        <MudText Typo="Typo.h6">Slider 1: Steps (n) — Scaled Random Walk → Brownian Motion</MudText>
+        <MudText Typo="Typo.body2" Class="mb-1">
+            As n increases, the time step Δt = 1/n shrinks. With correct diffusive scaling (α = 1),
+            the path converges to Brownian motion W(t).
+        </MudText>
+        <MudSlider T="int"
+                   Value="_numSteps"
+                   ValueChanged="OnNumStepsChanged"
+                   Min="5" Max="500" Step="5"
+                   Color="Color.Primary">
+            Steps (n = @_numSteps, Δt = @((1.0 / _numSteps).ToString("F4")))
+        </MudSlider>
+    </MudItem>
+
+    <!-- Slider 2: Exponent α -->
+    <MudItem xs="12" Class="mt-4">
+        <MudText Typo="Typo.h6">Slider 2: Scaling Exponent (α) — Diffusive Scaling</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Var(ΔX) = σ²(Δt)^α. The exponent α controls whether the process freezes, explodes, or converges to Brownian motion.
+        </MudText>
+        <MudSlider T="double"
+                   Value="_alpha"
+                   ValueChanged="OnAlphaChanged"
+                   Min="0.0" Max="2.0" Step="0.05"
+                   Color="Color.Secondary">
+            α = @_alpha.ToString("F2")
+        </MudSlider>
+    </MudItem>
+
+    <!-- Regime badge -->
+    <MudItem xs="12" Class="mt-2">
+        <MudAlert Severity="@_alertSeverity" Dense="true">
+            <strong>Regime: @_regime</strong> — @_diffusiveDescription
+        </MudAlert>
+    </MudItem>
+
+    <!-- Formula display -->
+    <MudItem xs="12" Class="mt-2">
+        <MudPaper Class="pa-3" Elevation="0" Style="background:#f5f5f5">
+            <MudText Typo="Typo.body2">
+                Each increment std dev: σ · (Δt)^(α/2) = 1 · (@((1.0 / _numSteps).ToString("F4")))^(@(_alpha / 2).ToString("F2"))
+                = <strong>@ComputeScale().ToString("F6")</strong>
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mt-1">
+                Total path std dev after n steps: √n · scale = <strong>@(Math.Sqrt(_numSteps) * ComputeScale()).ToString("F4")</strong>
+                @if (_alpha > 1)
+                {
+                    <span style="color:#1565C0"> → shrinks as n grows (freezing)</span>
+                }
+                else if (_alpha < 1)
+                {
+                    <span style="color:#c62828"> → grows as n grows (explosion)</span>
+                }
+                else
+                {
+                    <span style="color:#2e7d32"> → stays O(1) as n grows (Brownian)</span>
+                }
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@code {
+    private List<ChartSeries<double>> _series = new();
+
+    private TimeSeriesChartOptions _options = new TimeSeriesChartOptions
+    {
+        YAxisLines = false,
+        XAxisLines = false,
+        LineStrokeWidth = 1,
+        ShowDataMarkers = false,
+        XAxisTitle = "Time",
+        YAxisTitle = "Value",
+        YAxisRequireZeroPoint = false,
+    };
+
+    private int _numSteps = 50;
+    private double _alpha = 1.0;   // scaling exponent; α=1 → Brownian motion
+    private double _sigma = 1.0;   // fixed base volatility
+
+    private string _regime = "";
+    private string _diffusiveDescription = "";
+    private Severity _alertSeverity = Severity.Success;
+
+    protected override void OnInitialized()
+    {
+        RegenerateChart();
+    }
+
+    private void OnNumStepsChanged(int value)
+    {
+        _numSteps = value;
+        RegenerateChart();
+    }
+
+    private void OnAlphaChanged(double value)
+    {
+        _alpha = value;
+        RegenerateChart();
+    }
+
+    // σ · (Δt)^(α/2)
+    private double ComputeScale()
+    {
+        double dt = 1.0 / _numSteps;
+        return _sigma * Math.Pow(dt, _alpha / 2.0);
+    }
+
+    private void RegenerateChart()
+    {
+        UpdateRegime();
+
+        double dt = 1.0 / _numSteps;
+        double scale = ComputeScale();
+        var start = new DateTime(2024, 1, 1, 0, 0, 0);
+
+        _series = new List<ChartSeries<double>>
+        {
+            MakePath("Path 1", start, dt, scale, seed: 1),
+            MakePath("Path 2", start, dt, scale, seed: 2),
+            MakePath("Path 3", start, dt, scale, seed: 3),
+        };
+
+        StateHasChanged();
+    }
+
+    private ChartSeries<double> MakePath(string name, DateTime start,
+                                          double dt, double scale, int seed)
+    {
+        var rng = new Random(seed);
+        var data = new TimeValue<double>[_numSteps + 1];
+        double value = 0;
+
+        data[0] = new TimeValue<double>(start, value);
+        for (int i = 1; i <= _numSteps; i++)
+        {
+            // ±1 Rademacher increment, scaled by σ(Δt)^(α/2)
+            double increment = (rng.NextDouble() < 0.5 ? -1.0 : 1.0) * scale;
+            value += increment;
+            // spread steps evenly over 1 hour
+            data[i] = new TimeValue<double>(start.AddSeconds(i * dt * 3600), value);
+        }
+
+        return new ChartSeries<double>
+        {
+            Name = name,
+            Data = data,
+            Visible = true,
+        };
+    }
+
+    private void UpdateRegime()
+    {
+        if (_alpha > 1.05)
+        {
+            _regime = "Freezing";
+            _alertSeverity = Severity.Info;
+            _diffusiveDescription =
+                $"α = {_alpha:F2} > 1: Var(ΔX) = σ²(Δt)^α shrinks too fast. " +
+                "As n → ∞ the path collapses to zero — the process freezes.";
+        }
+        else if (_alpha < 0.95)
+        {
+            _regime = "Explosion";
+            _alertSeverity = Severity.Error;
+            _diffusiveDescription =
+                $"α = {_alpha:F2} < 1: Var(ΔX) = σ²(Δt)^α shrinks too slowly. " +
+                "As n → ∞ the total variation blows up — the process explodes.";
+        }
+        else
+        {
+            _regime = "Brownian Motion";
+            _alertSeverity = Severity.Success;
+            _diffusiveDescription =
+                $"α = {_alpha:F2} ≈ 1: the classical diffusive regime. " +
+                "Var(ΔX) = σ²Δt — variance grows linearly with time.";
+        }
+    }
+}
