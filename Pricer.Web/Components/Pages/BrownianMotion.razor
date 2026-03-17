@@ -1,6 +1,7 @@
 ﻿@page "/brownian-motion"
 @using MudBlazor
 @using MudBlazor.Charts
+@using Pricer.Numerics
 
 <MudText Typo="Typo.h4" Class="mb-2">Brownian Motion Simulator</MudText>
 <MudText Typo="Typo.body2" Class="mb-4">
@@ -8,6 +9,7 @@
     and how volatility scaling affects the nature of the stochastic process.
 </MudText>
 
+<!-- ================= SINGLE BM CHART ================= -->
 <MudPaper Class="pa-4 mb-4">
     <MudChart ChartType="ChartType.Timeseries"
               ChartSeries="@_series"
@@ -61,10 +63,10 @@
         <MudPaper Class="pa-3" Elevation="0" Style="background:#f5f5f5">
             <MudText Typo="Typo.body2">
                 Each increment std dev: σ · (Δt)^(α/2) = 1 · (@((1.0 / _numSteps).ToString("F4")))^(@(_alpha / 2).ToString("F2"))
-                = <strong>@ComputeScale().ToString("F6")</strong>
+                = <strong>@BrownianMotionGenerator.ComputeScale(_numSteps, _sigma, _alpha).ToString("F6")</strong>
             </MudText>
             <MudText Typo="Typo.body2" Class="mt-1">
-                Total path std dev after n steps: √n · scale = <strong>@(Math.Sqrt(_numSteps) * ComputeScale()).ToString("F4")</strong>
+                Total path std dev after n steps: √n · scale = <strong>@(Math.Sqrt(_numSteps) * BrownianMotionGenerator.ComputeScale(_numSteps, _sigma, _alpha)).ToString("F4")</strong>
                 @if (_alpha > 1)
                 {
                     <span style="color:#1565C0"> → shrinks as n grows (freezing)</span>
@@ -83,7 +85,51 @@
 
 </MudGrid>
 
+<!-- ================= CORRELATED BROWNIAN MOTIONS ================= -->
+<MudDivider Class="my-6" />
+
+<MudText Typo="Typo.h5" Class="mb-2">Correlated Brownian Motions</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Two Brownian paths W₁ and W₂ with correlation ρ.
+    When ρ = 1 they move together; when ρ = −1 they move in opposite directions;
+    when ρ = 0 they are independent.
+</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudChart ChartType="ChartType.Timeseries"
+              ChartSeries="@_corrSeries"
+              Width="100%"
+              Height="300px"
+              ChartOptions="_corrOptions" />
+</MudPaper>
+
+<MudGrid>
+
+    <MudItem xs="12">
+        <MudText Typo="Typo.h6">Correlation Coefficient (ρ)</MudText>
+        <MudSlider T="double"
+                   Value="_rho"
+                   ValueChanged="OnRhoChanged"
+                   Min="-1.0" Max="1.0" Step="0.05"
+                   Color="Color.Tertiary">
+            ρ = @_rho.ToString("F2")
+        </MudSlider>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-3" Elevation="0" Style="background:#f5f5f5">
+            <MudText Typo="Typo.body2">
+                Construction: W₂ = ρ·W₁ + √(1−ρ²)·W₁⊥, where W₁⊥ is independent of W₁.
+                This ensures Cov(W₁(t), W₂(t)) = ρ·t.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
 @code {
+
+    // ================= Single BM fields =================
     private List<ChartSeries<double>> _series = new();
 
     private TimeSeriesChartOptions _options = new TimeSeriesChartOptions
@@ -98,18 +144,36 @@
     };
 
     private int _numSteps = 50;
-    private double _alpha = 1.0;   // scaling exponent; α=1 → Brownian motion
-    private double _sigma = 1.0;   // fixed base volatility
+    private double _alpha = 1.0;
+    private double _sigma = 1.0;
 
     private string _regime = "";
     private string _diffusiveDescription = "";
     private Severity _alertSeverity = Severity.Success;
 
+    // ================= Correlated BM fields =================
+    private List<ChartSeries<double>> _corrSeries = new();
+    private double _rho = 0.0;
+    private int _corrSteps = 200;
+
+    private TimeSeriesChartOptions _corrOptions = new TimeSeriesChartOptions
+    {
+        YAxisLines = false,
+        XAxisLines = false,
+        LineStrokeWidth = 1.5,
+        ShowDataMarkers = false,
+        XAxisTitle = "Time",
+        YAxisTitle = "Value",
+        YAxisRequireZeroPoint = false,
+    };
+
     protected override void OnInitialized()
     {
         RegenerateChart();
+        RegenerateCorrelatedChart();
     }
 
+    // ================= Single BM methods =================
     private void OnNumStepsChanged(int value)
     {
         _numSteps = value;
@@ -122,19 +186,12 @@
         RegenerateChart();
     }
 
-    // σ · (Δt)^(α/2)
-    private double ComputeScale()
-    {
-        double dt = 1.0 / _numSteps;
-        return _sigma * Math.Pow(dt, _alpha / 2.0);
-    }
-
     private void RegenerateChart()
     {
         UpdateRegime();
 
         double dt = 1.0 / _numSteps;
-        double scale = ComputeScale();
+        double scale = BrownianMotionGenerator.ComputeScale(_numSteps, _sigma, _alpha);
         var start = new DateTime(2024, 1, 1, 0, 0, 0);
 
         _series = new List<ChartSeries<double>>
@@ -150,19 +207,12 @@
     private ChartSeries<double> MakePath(string name, DateTime start,
                                           double dt, double scale, int seed)
     {
-        var rng = new Random(seed);
-        var data = new TimeValue<double>[_numSteps + 1];
-        double value = 0;
+        var (times, values) = BrownianMotionGenerator.GeneratePath(
+            _numSteps, dt, scale, start, seed);
 
-        data[0] = new TimeValue<double>(start, value);
-        for (int i = 1; i <= _numSteps; i++)
-        {
-            // ±1 Rademacher increment, scaled by σ(Δt)^(α/2)
-            double increment = (rng.NextDouble() < 0.5 ? -1.0 : 1.0) * scale;
-            value += increment;
-            // spread steps evenly over 1 hour
-            data[i] = new TimeValue<double>(start.AddSeconds(i * dt * 3600), value);
-        }
+        var data = new TimeValue<double>[_numSteps + 1];
+        for (int i = 0; i <= _numSteps; i++)
+            data[i] = new TimeValue<double>(times[i], values[i]);
 
         return new ChartSeries<double>
         {
@@ -198,5 +248,39 @@
                 $"α = {_alpha:F2} ≈ 1: the classical diffusive regime. " +
                 "Var(ΔX) = σ²Δt — variance grows linearly with time.";
         }
+    }
+
+    // ================= Correlated BM methods =================
+    private void OnRhoChanged(double value)
+    {
+        _rho = value;
+        RegenerateCorrelatedChart();
+    }
+
+    private void RegenerateCorrelatedChart()
+    {
+        var start = new DateTime(2024, 1, 1);
+        double dt = 1.0 / _corrSteps;
+
+        var (p1, p2) = BrownianMotionGenerator.GenerateCorrelatedPaths(
+            _corrSteps, 1.0, _rho);
+
+        var data1 = new TimeValue<double>[_corrSteps + 1];
+        var data2 = new TimeValue<double>[_corrSteps + 1];
+
+        for (int i = 0; i <= _corrSteps; i++)
+        {
+            var t = start.AddSeconds(i * dt * 3600);
+            data1[i] = new TimeValue<double>(t, p1[i]);
+            data2[i] = new TimeValue<double>(t, p2[i]);
+        }
+
+        _corrSeries = new List<ChartSeries<double>>
+        {
+            new() { Name = "W₁", Data = data1, Visible = true },
+            new() { Name = "W₂(ρ)", Data = data2, Visible = true },
+        };
+
+        StateHasChanged();
     }
 }
