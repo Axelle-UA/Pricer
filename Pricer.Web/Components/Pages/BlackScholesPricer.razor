@@ -1,5 +1,6 @@
 ﻿@page "/blackscholespricer"
 @using MudBlazor
+@using MudBlazor.Charts
 @using Pricer.Numerics
 
 Add your design for a B-S pricer & implied vol calculator using MudBlazor components here
@@ -73,6 +74,39 @@ Add your design for a B-S pricer & implied vol calculator using MudBlazor compon
             </MudAlert>
         }
 
+        <!-- ================= BS PRICE vs S CHART ================= -->
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.h6">BS Price vs Stock Price — Convergence to Payoff</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            The chart shows the Black–Scholes price as a function of S for a fixed T.
+            As T → 0, the BS curve converges to the payoff function (the hockey stick).
+            Use the slider to decrease T and watch the convergence.
+        </MudText>
+
+        <MudPaper Class="pa-4 mb-2">
+            <MudChart ChartType="ChartType.Line"
+                      ChartSeries="@_bsSeries"
+                      XAxisLabels="@_bsXLabels"
+                      Width="100%"
+                      Height="320px" />
+        </MudPaper>
+
+        <MudGrid Class="mt-2">
+            <MudItem xs="12">
+                <MudText Typo="Typo.body2" Class="mb-1">
+                    T = <strong>@_chartT.ToString("F3")</strong> years
+                </MudText>
+                <MudSlider T="double"
+                           Value="_chartT"
+                           ValueChanged="OnChartTChanged"
+                           Min="0.001" Max="timeToMaturity" Step="0.001"
+                           Color="Color.Primary">
+                    T = @_chartT.ToString("F3")
+                </MudSlider>
+            </MudItem>
+        </MudGrid>
+
         <!-- ================= IMPLIED VOL SECTION ================= -->
         <MudDivider Class="my-6" />
 
@@ -144,6 +178,7 @@ Add your design for a B-S pricer & implied vol calculator using MudBlazor compon
 
 @code {
 
+    // ---- Black-Scholes pricer fields ----
     private OptionType optionType = OptionType.Call;
 
     private double underlyingPrice = 100;
@@ -161,37 +196,80 @@ Add your design for a B-S pricer & implied vol calculator using MudBlazor compon
     private double? impliedVol;
     private double? bachelierImpliedVol;
 
+    // ---- BS vs S chart fields ----
+    private List<ChartSeries<double>> _bsSeries = new();
+    private string[] _bsXLabels = Array.Empty<string>();
+    private double _chartT = 1.0;
+
+    protected override void OnInitialized()
+    {
+        RegenerateBsChart();
+    }
+
+    // ---- Pricer methods ----
     private void CalculatePrice()
     {
-        var blackScholesPricer = new BlackScholes(
-            optionType,
-            interestRate,
-            timeToMaturity,
-            volatility,
-            strike,
-            underlyingPrice
-        );
+        price = new BlackScholes(
+            optionType, interestRate, timeToMaturity,
+            volatility, strike, underlyingPrice).Price();
+    }
 
-        price = blackScholesPricer.Price();
+    private void OnChartTChanged(double value)
+    {
+        _chartT = value;
+        RegenerateBsChart();
+    }
+
+    private void RegenerateBsChart()
+    {
+        const int points = 100;
+
+        // S ranges from 50% to 150% of strike so the hockey stick is clearly visible
+        double sMin = strike * 0.5;
+        double sMax = strike * 1.5;
+
+        var bsPrices = new double[points];
+        var payoff = new double[points];
+        var labels = new string[points];
+
+        double t = Math.Max(_chartT, 1e-6);
+
+        for (int i = 0; i < points; i++)
+        {
+            double s = sMin + (sMax - sMin) * i / (points - 1);
+
+            bsPrices[i] = new BlackScholes(
+                optionType, interestRate, t,
+                volatility, strike, s).Price();
+
+            payoff[i] = optionType == OptionType.Call
+                ? Math.Max(s - strike, 0)
+                : Math.Max(strike - s, 0);
+
+            // Label every 10th point with the S value
+            labels[i] = (i % 10 == 0) ? s.ToString("F0") : "";
+        }
+
+        _bsSeries = new List<ChartSeries<double>>
+        {
+            new() { Name = "BS Price",  Data = bsPrices, Visible = true },
+            new() { Name = "Payoff",    Data = payoff,   Visible = true },
+        };
+
+        _bsXLabels = labels;
+        StateHasChanged();
     }
 
     private void ComputeImpliedVol()
     {
         impliedVol = ImpliedVolatilityCalculator.Compute(
-            optionType,
-            marketPrice,
-            interestRate,
-            timeToMaturity,
-            strike,
-            underlyingPrice,
-            0.2D,
-            tolerance,
-            maxIterations
-        );
+            optionType, marketPrice, interestRate, timeToMaturity,
+            strike, underlyingPrice, 0.2D, tolerance, maxIterations);
     }
 
     private void ComputeBachelierImpliedVol()
     {
-        bachelierImpliedVol = ImpliedVolatilityCalculator.BachelierImpliedVolATM(marketPrice, underlyingPrice, timeToMaturity, interestRate);
+        bachelierImpliedVol = ImpliedVolatilityCalculator.BachelierImpliedVolATM(
+            marketPrice, underlyingPrice, timeToMaturity, interestRate);
     }
 }
