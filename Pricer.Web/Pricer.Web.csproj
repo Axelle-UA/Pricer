@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="9.0.0" />
+    <PackageReference Include="Plotly.Blazor" Version="7.1.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,3 +17,4 @@
   </ItemGroup>
 
 </Project>
+

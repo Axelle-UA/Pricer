@@ -1,5 +1,8 @@
 using Pricer.Web.Components;
+// using MudBlazor;
 using MudBlazor.Services;
+// using Plotly.Blazor;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices();
+// builder.Services.AddPlotlyBlazor();
+
 
 var app = builder.Build();
 

@@ -1,0 +1,267 @@
+@page "/greeks"
+@using MudBlazor
+@using Plotly.Blazor
+@using Plotly.Blazor.Traces
+@using Plotly.Blazor.LayoutLib
+@using Plotly.Blazor.Traces.ScatterLib
+@using Pricer.Numerics
+@rendermode InteractiveServer
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+
+    <MudText Typo="Typo.h4" Class="mb-1">Greeks</MudText>
+    <MudText Typo="Typo.body2" Class="mb-4">
+        Strategy: <strong>@_strategy</strong> &nbsp;|&nbsp;
+        K = @_K &nbsp;|&nbsp; r = @(_r * 100)% &nbsp;|&nbsp;
+        σ = @_sigma.ToString("F2") &nbsp;|&nbsp;
+        T = @_T.ToString("F2")
+    </MudText>
+
+    <!-- ================= CONTROLS ================= -->
+    <MudGrid Class="mb-4" AlignItems="AlignItems.Center">
+
+        <MudItem xs="12" sm="3">
+            <MudSelect T="string" Label="Strategy"
+                       @bind-Value="_strategy"
+                       @bind-Value:after="RegenerateAsync">
+                <MudSelectItem Value='"Call"'>Call</MudSelectItem>
+                <MudSelectItem Value='"Put"'>Put</MudSelectItem>
+                <MudSelectItem Value='"CallSpread"'>Call Spread</MudSelectItem>
+                <MudSelectItem Value='"Straddle"'>Straddle</MudSelectItem>
+                <MudSelectItem Value='"Butterfly"'>Butterfly</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudText Typo="Typo.body2">Volatility: <strong>σ = @_sigma.ToString("F2")</strong></MudText>
+            <MudSlider T="double" @bind-Value="_sigma"
+                       @bind-Value:after="RegenerateAsync"
+                       Min="0.05" Max="0.80" Step="0.01"
+                       Color="Color.Secondary" />
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudText Typo="Typo.body2">Time to maturity: <strong>T = @_T.ToString("F2")</strong></MudText>
+            <MudSlider T="double" @bind-Value="_T"
+                       @bind-Value:after="RegenerateAsync"
+                       Min="0.01" Max="2.0" Step="0.01"
+                       Color="Color.Primary" />
+        </MudItem>
+
+    </MudGrid>
+
+    <!-- ================= ROW 1: Price + Delta ================= -->
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-1">Price</MudText>
+                <PlotlyChart @ref="_priceChart"
+                             @bind-Data="_priceData"
+                             @bind-Layout="_priceLayout"
+                             Config="_config"
+                             style="width:100%; height:280px;" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-1">Delta</MudText>
+                <PlotlyChart @ref="_deltaChart"
+                             @bind-Data="_deltaData"
+                             @bind-Layout="_deltaLayout"
+                             Config="_config"
+                             style="width:100%; height:280px;" />
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- ================= ROW 2: Gamma + Theta + Vega ================= -->
+    <MudGrid Class="mt-4">
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-1">Gamma</MudText>
+                <PlotlyChart @ref="_gammaChart"
+                             @bind-Data="_gammaData"
+                             @bind-Layout="_gammaLayout"
+                             Config="_config"
+                             style="width:100%; height:280px;" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-1">Theta</MudText>
+                <PlotlyChart @ref="_thetaChart"
+                             @bind-Data="_thetaData"
+                             @bind-Layout="_thetaLayout"
+                             Config="_config"
+                             style="width:100%; height:280px;" />
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-3">
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-1">Vega</MudText>
+                <PlotlyChart @ref="_vegaChart"
+                             @bind-Data="_vegaData"
+                             @bind-Layout="_vegaLayout"
+                             Config="_config"
+                             style="width:100%; height:280px;" />
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+</MudContainer>
+
+@code {
+
+    // ---- Chart references (needed to call React for updates) ----
+    private PlotlyChart? _priceChart;
+    private PlotlyChart? _deltaChart;
+    private PlotlyChart? _gammaChart;
+    private PlotlyChart? _thetaChart;
+    private PlotlyChart? _vegaChart;
+
+    // ---- Parameters ----
+    private string _strategy = "Call";
+    private double _K = 100;
+    private double _r = 0.05;
+    private double _T = 1.0;
+    private double _sigma = 0.20;
+
+    // ---- Chart data ----
+    private IList<ITrace> _priceData = new List<ITrace>();
+    private IList<ITrace> _deltaData = new List<ITrace>();
+    private IList<ITrace> _gammaData = new List<ITrace>();
+    private IList<ITrace> _thetaData = new List<ITrace>();
+    private IList<ITrace> _vegaData = new List<ITrace>();
+
+    private Layout _priceLayout = new();
+    private Layout _deltaLayout = new();
+    private Layout _gammaLayout = new();
+    private Layout _thetaLayout = new();
+    private Layout _vegaLayout = new();
+
+    private Config _config = new Config
+    {
+        Responsive = true,
+        DisplayModeBar = Plotly.Blazor.ConfigLib.DisplayModeBarEnum.False,
+    };
+
+    // On first render, populate and render the charts
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            ComputeData();
+            await ReactAll();
+        }
+    }
+
+    // Called by sliders and dropdown
+    private async Task RegenerateAsync()
+    {
+        ComputeData();
+        await ReactAll();
+    }
+
+    // Tell each PlotlyChart to re-render with the new data
+    private async Task ReactAll()
+    {
+        if (_priceChart is not null) await _priceChart.React();
+        if (_deltaChart is not null) await _deltaChart.React();
+        if (_gammaChart is not null) await _gammaChart.React();
+        if (_thetaChart is not null) await _thetaChart.React();
+        if (_vegaChart is not null) await _vegaChart.React();
+    }
+
+    private Layout MakeLayout(string yTitle) => new Layout
+    {
+        Margin = new Plotly.Blazor.LayoutLib.Margin { L = 50, R = 20, T = 10, B = 40 },
+        ShowLegend = true,
+        PaperBgColor = "transparent",
+        PlotBgColor = "transparent",
+        Font = new Plotly.Blazor.LayoutLib.Font { Size = 11 },
+        XAxis = new List<XAxis>
+        {
+            new XAxis { Title = new Plotly.Blazor.LayoutLib.XAxisLib.Title { Text = "Stock Price (S)" } }
+        },
+        YAxis = new List<YAxis>
+        {
+            new YAxis { Title = new Plotly.Blazor.LayoutLib.YAxisLib.Title { Text = yTitle } }
+        },
+    };
+
+    private Scatter MakeLine(string name, List<object> x, List<object> y, string color, string dash = "solid") =>
+        new Scatter
+        {
+            Name = name,
+            X = x,
+            Y = y,
+            Mode = ModeFlag.Lines,
+            Line = new Line { Color = color, Width = 2M, Dash = dash },
+        };
+
+    private void ComputeData()
+    {
+        const int points = 150;
+        double sMin = _K * 0.5;
+        double sMax = _K * 1.5;
+
+        var sValues = new List<object>();
+        var prices = new List<object>();
+        var payoffs = new List<object>();
+        var deltas = new List<object>();
+        var gammas = new List<object>();
+        var thetas = new List<object>();
+        var vegas = new List<object>();
+
+        for (int i = 0; i < points; i++)
+        {
+            double S = sMin + (sMax - sMin) * i / (points - 1);
+            sValues.Add(Math.Round(S, 2));
+
+            GreeksResult g = _strategy switch
+            {
+                "Call" => GreeksCalculator.Compute(OptionType.Call, S, _K, _r, _T, _sigma),
+                "Put" => GreeksCalculator.Compute(OptionType.Put, S, _K, _r, _T, _sigma),
+                "CallSpread" => GreeksCalculator.CallSpread(S, _K * 0.9, _K * 1.1, _r, _T, _sigma),
+                "Straddle" => GreeksCalculator.Straddle(S, _K, _r, _T, _sigma),
+                "Butterfly" => GreeksCalculator.Butterfly(S, _K * 0.9, _K, _K * 1.1, _r, _T, _sigma),
+                _ => GreeksCalculator.Compute(OptionType.Call, S, _K, _r, _T, _sigma),
+            };
+
+            prices.Add(Math.Round(g.Price, 4));
+            deltas.Add(Math.Round(g.Delta, 4));
+            gammas.Add(Math.Round(g.Gamma, 6));
+            thetas.Add(Math.Round(g.Theta, 6));
+            vegas.Add(Math.Round(g.Vega, 4));
+
+            payoffs.Add(Math.Round(_strategy switch
+            {
+                "Call" => Math.Max(S - _K, 0),
+                "Put" => Math.Max(_K - S, 0),
+                "CallSpread" => Math.Max(S - _K * 0.9, 0) - Math.Max(S - _K * 1.1, 0),
+                "Straddle" => Math.Max(S - _K, 0) + Math.Max(_K - S, 0),
+                "Butterfly" => Math.Max(S - _K * 0.9, 0) - 2 * Math.Max(S - _K, 0) + Math.Max(S - _K * 1.1, 0),
+                _ => Math.Max(S - _K, 0),
+            }, 4));
+        }
+
+        _priceData = new List<ITrace>
+        {
+            MakeLine("Intrinsic", sValues, payoffs, "grey", "dash"),
+            MakeLine("BS Price",  sValues, prices,  "#1976D2"),
+        };
+        _priceLayout = MakeLayout("Price");
+
+        _deltaData = new List<ITrace> { MakeLine("Delta", sValues, deltas, "#388E3C") };
+        _deltaLayout = MakeLayout("Delta");
+
+        _gammaData = new List<ITrace> { MakeLine("Gamma", sValues, gammas, "#F57C00") };
+        _gammaLayout = MakeLayout("Gamma");
+
+        _thetaData = new List<ITrace> { MakeLine("Theta", sValues, thetas, "#C62828") };
+        _thetaLayout = MakeLayout("Theta (per day)");
+
+        _vegaData = new List<ITrace> { MakeLine("Vega", sValues, vegas, "#6A1B9A") };
+        _vegaLayout = MakeLayout("Vega (per 1% vol)");
+    }
+}
